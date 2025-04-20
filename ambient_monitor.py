@@ -15,11 +15,18 @@ from datetime import datetime, timezone
 
 
 class AmbientMonitor:
-    CALIBRATION_SAMPLES = 50
+    CALIBRATION_SAMPLES = 120
+    HUMIDITY_BASELINE = 40.0
+    HUMIDITY_WEIGHT = 0.25
 
     def __init__(self):
         i2c = board.I2C()  # Automatically uses FT232H as I2C if BLINKA_FT232H=1 is set
         self._sensor = adafruit_bme680.Adafruit_BME680_I2C(i2c)
+        self._sensor.humidity_oversample = 2
+        self._sensor.pressure_oversample = 4
+        self._sensor.temperature_oversample = 8
+        self._sensor.filter_size = 3
+        self._sensor.set_gas_heater(320, 150)  # 320 degrees C for 150 ms
         self._calibrate_baseline()
 
     def _calibrate_baseline(self):
@@ -32,47 +39,48 @@ class AmbientMonitor:
         self._gas_baseline = total_gas / self.CALIBRATION_SAMPLES
         print(f"\nDone")
 
+    def _calculate_iaq(self, gas_resistance, humidity):
+        # Humidity score (0-25)
+        hum_offset = humidity - self.HUMIDITY_BASELINE
+        if hum_offset > 0:
+            hum_score = ((100 - self.HUMIDITY_BASELINE - hum_offset) / (100 - self.HUMIDITY_BASELINE)) * self.HUMIDITY_WEIGHT * 100
+        else:
+            hum_score = ((self.HUMIDITY_BASELINE + hum_offset) / self.HUMIDITY_BASELINE) * self.HUMIDITY_WEIGHT * 100
+
+        # Gas score (0-75)
+        gas_ratio = gas_resistance / self._gas_baseline
+        if (self._gas_baseline - gas_resistance) > 0:
+            gas_score = gas_ratio * (100 * (1 - self.HUMIDITY_WEIGHT))
+        else:
+            gas_score = 70 + (5 * (gas_ratio - 1))
+            if gas_score > 75:
+                gas_score = 75
+
+        # Combined IAQ index (0-100, higher = cleaner air)
+        iaq_percent = hum_score + gas_score
+        return iaq_percent
+
+    def _estimate_eco2(self, iaq_percent):
+        iaq_score = (100 - iaq_percent) * 5
+        return 250 * math.exp(0.012 * iaq_score)
+    
     def get_data(self):
         timestamp = datetime.now(timezone.utc)
         temperature = self._sensor.temperature
         humidity = self._sensor.relative_humidity
         pressure = self._sensor.pressure
         gas_resistance = self._sensor.gas
-        iaq = self._calculate_iaq(gas_resistance, humidity, self._gas_baseline)
-        tvoc = self._estimate_tvoc(gas_resistance, self._gas_baseline)
+        iaq = self._calculate_iaq(gas_resistance, humidity)
+        eco2 = self._estimate_eco2(iaq)
         return {
             'timestamp': timestamp,
             'temperature': temperature,
             'humidity': humidity,
             'pressure': pressure,
+            'gas': gas_resistance,
             'iaq': iaq,
-            'tvoc': tvoc
+            'eco2': eco2
         }
-
-    @staticmethod
-    def _calculate_iaq(gas_resistance, humidity, gas_baseline, hum_baseline=40.0):
-        hum_weight = 0.25  # Humidity contributes 25%
-        gas_weight = 0.75  # Gas contributes 75%
-
-        # Humidity score (0-25)
-        hum_offset = humidity - hum_baseline
-        if hum_offset > 0:
-            hum_score = ((100 - hum_baseline - hum_offset) / (100 - hum_baseline)) * hum_weight * 100
-        else:
-            hum_score = ((hum_baseline + hum_offset) / hum_baseline) * hum_weight * 100
-
-        # Gas score (0-75)
-        gas_score = (gas_resistance / gas_baseline) * gas_weight * 100
-
-        # Combined IAQ index (0-100, higher = cleaner air)
-        iaq = hum_score + gas_score
-        return max(0, min(iaq, 100))
-
-    @staticmethod
-    def _estimate_tvoc(gas_resistance, gas_baseline):
-        ratio = gas_baseline / gas_resistance
-        tvoc_ppb = 50 * math.exp(4 * (ratio - 1))  # Exponential mapping
-        return min(tvoc_ppb, 3000)  # Cap at 3000 ppb
 
 
 if __name__ == "__main__":
@@ -83,6 +91,6 @@ if __name__ == "__main__":
         print(f"Temperature: {data['temperature']} °C")
         print(f"Humidity: {data['humidity']} %")
         print(f"Pressure: {data['pressure']} hPa")
-        print(f"IAQ: {data['iaq']}")
-        print(f"TVOC: {data['tvoc']} ppb")
+        print(f"IAQ: {data['iaq']} %")
+        print(f"eCO2: {data['eco2']} ppm")
         time.sleep(1)
