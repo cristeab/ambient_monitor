@@ -59,10 +59,6 @@ class AmbientMonitor:
         # Combined IAQ index (0-100, higher = cleaner air)
         iaq_percent = hum_score + gas_score
         return iaq_percent
-
-    def _estimate_eco2(self, iaq_percent):
-        iaq_score = (100 - iaq_percent) * 5
-        return 250 * math.exp(0.012 * iaq_score)
     
     def get_data(self):
         timestamp = datetime.now(timezone.utc)
@@ -71,15 +67,13 @@ class AmbientMonitor:
         pressure = self._sensor.pressure
         gas_resistance = self._sensor.gas
         iaq = self._calculate_iaq(gas_resistance, humidity)
-        eco2 = self._estimate_eco2(iaq)
         return {
             'timestamp': timestamp,
             'temperature': temperature,
             'humidity': humidity,
             'pressure': pressure,
             'gas': gas_resistance,
-            'iaq': iaq,
-            'eco2': eco2
+            'iaq': iaq
         }
 
 
@@ -92,5 +86,4 @@ if __name__ == "__main__":
         print(f"Humidity: {data['humidity']} %")
         print(f"Pressure: {data['pressure']} hPa")
         print(f"IAQ: {data['iaq']} %")
-        print(f"eCO2: {data['eco2']} ppm")
         time.sleep(1)
