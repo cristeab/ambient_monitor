@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 
 
 class AmbientMonitor:
-    GAS_BASELINE_OHMS = 180000
-    HUMIDITY_BASELINE = 40.0
-    HUMIDITY_WEIGHT = 0.25
+    GAS_BASELINE_OHMS = 150000
+    HUMIDITY_BASELINE = 40.0 # 40% humidity is considered optimal
+    HUMIDITY_WEIGHT = 0.25 # humidity contributes 25% to the IAQ score
 
     def __init__(self):
         self.elapsed_time = "N/A"
@@ -31,33 +31,35 @@ class AmbientMonitor:
         self._sensor.set_gas_heater(320, 150)  # 320 degrees C for 150 ms
 
     def _calculate_iaq(self, gas_resistance, humidity):
-
-        # Humidity score (0-25)
-        hum_offset = humidity - self.HUMIDITY_BASELINE
-        if hum_offset > 0:
-            # Humidity is above optimal -> too humid
-            hum_score = ((100.0 - self.HUMIDITY_BASELINE) - hum_offset) / (100.0 - self.HUMIDITY_BASELINE)
-        else:
-            # Humidity is below optimal -> too dry
-            hum_score = (self.HUMIDITY_BASELINE + hum_offset) / self.HUMIDITY_BASELINE
-        hum_score = max(0.0, min(1.0, hum_score))  # clamp between 0 and 1
-        hum_score *= (self.HUMIDITY_WEIGHT * 100.0)  # now scale to 0-25 range
-
-        # Calculate gas contribution (scaled 0 to 75)
+        # Calculate gas score (75% of total)
+        gas_ratio = gas_resistance / self.GAS_BASELINE_OHMS
         gas_offset = self.GAS_BASELINE_OHMS - gas_resistance
-        if gas_offset > 0:
-            # Gas resistance dropped -> air quality degraded
-            gas_score = (gas_resistance / self.GAS_BASELINE_OHMS)
-            gas_score = max(0.0, min(1.0, gas_score))  # ratio between 0 and 1
-            gas_score *= (100.0 - self.HUMIDITY_WEIGHT * 100.0)  # scale to 0-75 range
+
+        # Calculate humidity score (25% of total)
+        hum_offset = humidity - self.HUMIDITY_BASELINE
+        hum_score = 0.0
+
+        if hum_offset > 0:
+            hum_score = (100 - self.HUMIDITY_BASELINE - hum_offset) / (100 - self.HUMIDITY_BASELINE)
+            hum_score *= (self.HUMIDITY_WEIGHT * 100)
         else:
-            # gas_resistance is higher than baseline (very clean air)
-            gas_score = 100.0 - (self.HUMIDITY_WEIGHT * 100.0)   # = 75, i.e. no gas contribution to "bad" score
+            hum_score = (self.HUMIDITY_BASELINE + hum_offset) / self.HUMIDITY_BASELINE
+            hum_score *= (self.HUMIDITY_WEIGHT * 100)
 
-        # Combine humidity and gas scores
-        air_quality_score = hum_score + gas_score  # 0 (clean) to 100 (dirty) percentage
+        # Different paths for calculating gas score depending on offset
+        if gas_offset > 0:
+            gas_score = gas_ratio * (100 * (1 - self.HUMIDITY_WEIGHT))
+        else:
+            # When air is cleaner than baseline
+            gas_score = min(75, 70 + (5 * (gas_ratio - 1)))
 
-        return air_quality_score
+        # Calculate IAQ percentage (0-100%, with 100% being cleanest)
+        iaq_percent = hum_score + gas_score
+
+        # Convert to 0-500 scale (0 = clean, 500 = very polluted)
+        iaq_score = (100 - iaq_percent) * 5
+
+        return iaq_score
 
     def _update_elapsed_time(self, current_time):
         if self._start_time is None:
