@@ -107,13 +107,11 @@ if __name__ == "__main__":
     while True:
         data = monitor.get_data()
         if data is not None:
-            line = f"{monitor.elapsed_time}, "
-            line += f"Temperature: {data['temperature']:.1f} °C, "
-            line += f"Humidity: {data['humidity']:.1f} %, "
-            line += f"Pressure: {data['pressure']:.1f} hPa, "
-            line += f"Gas: {data['gas']} ohms, "
-            if monitor.DEFAULT_GAS_BASELINE_OHMS is not None:
-                line += f"Gas Baseline: {monitor.DEFAULT_GAS_BASELINE_OHMS} ohms, "
-            line += f"IAQ: {data['iaq']:.1f} %"
-            print(line, flush=True)
+            print(f"{monitor.elapsed_time}, "
+                f"Temperature: {data['temperature']:.1f} °C, "
+                f"Humidity: {data['humidity']:.1f} %, "
+                f"Pressure: {data['pressure']:.1f} hPa, "
+                f"Gas: {data['gas']} ohms, "
+                f"IAQ: {data['iaq']:.1f} %",
+                flush=True)
         time.sleep(1)
