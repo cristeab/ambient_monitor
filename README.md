@@ -1,2 +1,2 @@
-# ambient_monitor
+# Ambient Monitor
 Read environmental data from BME688 sensor
