@@ -24,6 +24,7 @@ class AmbientMonitor:
         self._start_time = None
         i2c = board.I2C()  # Automatically uses FT232H as I2C if BLINKA_FT232H=1 is set
         self._sensor = adafruit_bme680.Adafruit_BME680_I2C(i2c)
+        self._sensor.sea_level_pressure = 1013.25
         self._sensor.humidity_oversample = 2
         self._sensor.pressure_oversample = 4
         self._sensor.temperature_oversample = 8
@@ -52,36 +53,34 @@ class AmbientMonitor:
                 del self._calibration_data
 
     def _calculate_iaq(self, gas_resistance, humidity):
+        if self._gas_baseline is None:
+            return None
         # Humidity score (0-25)
         hum_offset = humidity - self.HUMIDITY_BASELINE
         if hum_offset > 0:
-            hum_score = ((100 - self.HUMIDITY_BASELINE - hum_offset) / (100 - self.HUMIDITY_BASELINE)) * self.HUMIDITY_WEIGHT * 100
+            # Humidity is above optimal -> too humid
+            hum_score = ((100.0 - self.HUMIDITY_BASELINE) - hum_offset) / (100.0 - self.HUMIDITY_BASELINE)
         else:
-            hum_score = ((self.HUMIDITY_BASELINE + hum_offset) / self.HUMIDITY_BASELINE) * self.HUMIDITY_WEIGHT * 100
+            # Humidity is below optimal -> too dry
+            hum_score = (self.HUMIDITY_BASELINE + hum_offset) / self.HUMIDITY_BASELINE
+        hum_score = max(0.0, min(1.0, hum_score))  # clamp between 0 and 1
+        hum_score *= (self.HUMIDITY_WEIGHT * 100.0)  # now scale to 0-25 range
 
-        # Gas score (0-75)
-        if self._gas_baseline is not None:
-            gas_ratio = gas_resistance / self._gas_baseline
-            if (self._gas_baseline - gas_resistance) > 0:
-                gas_score = gas_ratio * (100 * (1 - self.HUMIDITY_WEIGHT))
-            else:
-                gas_score = 70 + (5 * (gas_ratio - 1))
-                if gas_score > 75:
-                    gas_score = 75
+        # Calculate gas contribution (scaled 0 to 75)
+        gas_offset = self._gas_baseline - gas_resistance
+        if gas_offset > 0:
+            # Gas resistance dropped -> air quality degraded
+            gas_score = (gas_resistance / self._gas_baseline)
+            gas_score = max(0.0, min(1.0, gas_score))  # ratio between 0 and 1
+            gas_score *= (100.0 - self.HUMIDITY_WEIGHT * 100.0)  # scale to 0-75 range
         else:
-            # If no baseline provided, use the default scaling
-            # Assuming gas resistance ranges from 50 (bad) to 50000 (good)
-            gas_resistance = min(max(gas_resistance, 50), 50000)
-            gas_percent = (gas_resistance - 50) / (50000 - 50) * 100
-            gas_score = (100 - gas_percent) * 0.75
+            # gas_resistance is higher than baseline (very clean air)
+            gas_score = 100.0 - (self.HUMIDITY_WEIGHT * 100.0)   # = 75, i.e. no gas contribution to "bad" score
 
-        # Combined IAQ index (0-100, higher = cleaner air)
-        iaq_percent = hum_score + gas_score
-        # Convert to IAQ scale (0-500, where 0 is excellent and 500 is hazardous)
-        iaq = 500 - (iaq_percent * 5)
-        iaq = max(0, min(500, iaq)) 
+        # Combine humidity and gas scores
+        air_quality_score = hum_score + gas_score  # 0 (clean) to 100 (dirty) percentage
 
-        return iaq
+        return air_quality_score
 
     def _update_elapsed_time(self, current_time):
         if self._start_time is None:
@@ -110,6 +109,8 @@ class AmbientMonitor:
         humidity = self._sensor.relative_humidity
         pressure = self._sensor.pressure
         gas_resistance = self._sensor.gas
+        if temperature is None or gas_resistance == 0:
+            return None
         self._calibrate_baseline(timestamp, gas_resistance)
         iaq = self._calculate_iaq(gas_resistance, humidity)
         self._update_elapsed_time(timestamp)
@@ -119,7 +120,7 @@ class AmbientMonitor:
             'humidity': humidity,
             'pressure': pressure,
             'gas': gas_resistance,
-            'iaq': iaq
+            'iaq': iaq if iaq is not None else 0
         }
 
 
@@ -127,13 +128,14 @@ if __name__ == "__main__":
     monitor = AmbientMonitor()
     while True:
         data = monitor.get_data()
-        print(
-            f"{monitor.elapsed_time}, "
-            f"Temperature: {data['temperature']:.1f} °C, "
-            f"Humidity: {data['humidity']:.1f} %, "
-            f"Pressure: {data['pressure']:.1f} hPa, "
-            f"Gas: {data['gas']:.1f} ohms, "
-            f"IAQ: {data['iaq']:.1f}",
-            flush=True
-        )
+        if data is not None:
+            print(
+                f"{monitor.elapsed_time}, "
+                f"Temperature: {data['temperature']:.1f} °C, "
+                f"Humidity: {data['humidity']:.1f} %, "
+                f"Pressure: {data['pressure']:.1f} hPa, "
+                f"Gas: {data['gas']:.1f} ohms, "
+                f"IAQ: {data['iaq']:.1f} %",
+                flush=True
+            )
         time.sleep(1)
