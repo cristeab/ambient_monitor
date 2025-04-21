@@ -1,9 +1,9 @@
 # Ambient Monitor
-Read environmental data from BME688 sensor. The sensor is connected on the USB port using a FT232H USB to I2C adapter.
+Read environmental data from the BME688 sensor. The sensor is connected to the USB port using an FT232H USB-to-I2C adapter.
 
 The Indoor Air Quality (IAQ) is computed from the gas resistance and humidity using a simplified version of the algorithm provided by Bosch Sensortec Environmental Cluster (BSEC) Software.
 
-BSEC software is closed source and cannot be used in this setup because the sensor is connected on the USB port.
+BSEC software is closed source and cannot be used in this setup because the sensor is connected via the USB port.
 
 An usage example can be found [here](https://github.com/cristeab/aq_dashboard).
 
