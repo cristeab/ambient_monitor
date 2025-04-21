@@ -14,9 +14,7 @@ from datetime import datetime, timezone
 
 
 class AmbientMonitor:
-    CALIBRATION_SAMPLES = 60
-    CALIBRATION_DELAY_SEC = 5
-    DEFAULT_GAS_BASELINE_OHMS = 180000
+    GAS_BASELINE_OHMS = 180000
     HUMIDITY_BASELINE = 40.0
     HUMIDITY_WEIGHT = 0.25
 
@@ -46,10 +44,10 @@ class AmbientMonitor:
         hum_score *= (self.HUMIDITY_WEIGHT * 100.0)  # now scale to 0-25 range
 
         # Calculate gas contribution (scaled 0 to 75)
-        gas_offset = self.DEFAULT_GAS_BASELINE_OHMS - gas_resistance
+        gas_offset = self.GAS_BASELINE_OHMS - gas_resistance
         if gas_offset > 0:
             # Gas resistance dropped -> air quality degraded
-            gas_score = (gas_resistance / self.DEFAULT_GAS_BASELINE_OHMS)
+            gas_score = (gas_resistance / self.GAS_BASELINE_OHMS)
             gas_score = max(0.0, min(1.0, gas_score))  # ratio between 0 and 1
             gas_score *= (100.0 - self.HUMIDITY_WEIGHT * 100.0)  # scale to 0-75 range
         else:
