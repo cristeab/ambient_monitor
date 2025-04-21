@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 class AmbientMonitor:
     CALIBRATION_SAMPLES = 60
     CALIBRATION_DELAY_SEC = 5
+    DEFAULT_GAS_BASELINE_OHMS = 180000
     HUMIDITY_BASELINE = 40.0
     HUMIDITY_WEIGHT = 0.25
 
@@ -30,31 +31,9 @@ class AmbientMonitor:
         self._sensor.temperature_oversample = 8
         self._sensor.filter_size = 3
         self._sensor.set_gas_heater(320, 150)  # 320 degrees C for 150 ms
-        self._gas_baseline = None
-
-    def _calibrate_baseline(self, timestamp, gas_resistance):
-        if self._gas_baseline is not None:
-            return
-        # Calibrate the gas baseline
-        if not hasattr(self, "_calibration_data"):
-            # Initialize calibration state
-            self._calibration_data = {
-                "last_timestamp": timestamp,
-                "total_gas": 0,
-                "count": 0
-            }
-        elapsed_time = (timestamp - self._calibration_data["last_timestamp"]).total_seconds()
-        if elapsed_time >= self.CALIBRATION_DELAY_SEC:
-            self._calibration_data["last_timestamp"] = timestamp
-            self._calibration_data["total_gas"] += gas_resistance
-            self._calibration_data["count"] += 1
-            if self._calibration_data["count"] == self.CALIBRATION_SAMPLES:
-                self._gas_baseline = self._calibration_data["total_gas"] / self.CALIBRATION_SAMPLES
-                del self._calibration_data
 
     def _calculate_iaq(self, gas_resistance, humidity):
-        if self._gas_baseline is None:
-            return None
+
         # Humidity score (0-25)
         hum_offset = humidity - self.HUMIDITY_BASELINE
         if hum_offset > 0:
@@ -67,10 +46,10 @@ class AmbientMonitor:
         hum_score *= (self.HUMIDITY_WEIGHT * 100.0)  # now scale to 0-25 range
 
         # Calculate gas contribution (scaled 0 to 75)
-        gas_offset = self._gas_baseline - gas_resistance
+        gas_offset = self.DEFAULT_GAS_BASELINE_OHMS - gas_resistance
         if gas_offset > 0:
             # Gas resistance dropped -> air quality degraded
-            gas_score = (gas_resistance / self._gas_baseline)
+            gas_score = (gas_resistance / self.DEFAULT_GAS_BASELINE_OHMS)
             gas_score = max(0.0, min(1.0, gas_score))  # ratio between 0 and 1
             gas_score *= (100.0 - self.HUMIDITY_WEIGHT * 100.0)  # scale to 0-75 range
         else:
@@ -86,8 +65,8 @@ class AmbientMonitor:
         if self._start_time is None:
             self._start_time = current_time
 
-        elapsed_time = current_time - self._start_time
-        total_seconds = int(elapsed_time.total_seconds())
+        etime = current_time - self._start_time
+        total_seconds = int(etime.total_seconds())
 
         days, remainder = divmod(total_seconds, 86400)
         hours, remainder = divmod(remainder, 3600)
@@ -101,7 +80,7 @@ class AmbientMonitor:
         elif minutes > 0:
             self.elapsed_time += f"{minutes}:{seconds:02d}"
         else:
-            self.elapsed_time += f"{int(elapsed_time.total_seconds())} sec."
+            self.elapsed_time += f"{int(etime.total_seconds())} sec."
 
     def get_data(self):
         timestamp = datetime.now(timezone.utc)
@@ -111,7 +90,6 @@ class AmbientMonitor:
         gas_resistance = self._sensor.gas
         if temperature is None or gas_resistance == 0:
             return None
-        self._calibrate_baseline(timestamp, gas_resistance)
         iaq = self._calculate_iaq(gas_resistance, humidity)
         self._update_elapsed_time(timestamp)
         return {
@@ -129,13 +107,13 @@ if __name__ == "__main__":
     while True:
         data = monitor.get_data()
         if data is not None:
-            print(
-                f"{monitor.elapsed_time}, "
-                f"Temperature: {data['temperature']:.1f} °C, "
-                f"Humidity: {data['humidity']:.1f} %, "
-                f"Pressure: {data['pressure']:.1f} hPa, "
-                f"Gas: {data['gas']:.1f} ohms, "
-                f"IAQ: {data['iaq']:.1f} %",
-                flush=True
-            )
+            line = f"{monitor.elapsed_time}, "
+            line += f"Temperature: {data['temperature']:.1f} °C, "
+            line += f"Humidity: {data['humidity']:.1f} %, "
+            line += f"Pressure: {data['pressure']:.1f} hPa, "
+            line += f"Gas: {data['gas']} ohms, "
+            if monitor.DEFAULT_GAS_BASELINE_OHMS is not None:
+                line += f"Gas Baseline: {monitor.DEFAULT_GAS_BASELINE_OHMS} ohms, "
+            line += f"IAQ: {data['iaq']:.1f} %"
+            print(line, flush=True)
         time.sleep(1)
