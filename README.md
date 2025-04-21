@@ -10,5 +10,5 @@ An usage example can be found [here](https://github.com/cristeab/aq_dashboard).
 ## Sample output
 
 ```console
-Elapsed time: 13:25, Temperature: 23.3 °C, Humidity: 38.7 %, Pressure: 1000.6 hPa, Gas: 69584 ohms, IAQ: 53.2 %
+Elapsed time: 3:35, Temperature: 23.4 °C, Humidity: 37.7 %, Pressure: 1001.7 hPa, Gas: 82901 ohms, IAQ: 174.9
 ```
