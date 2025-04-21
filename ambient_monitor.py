@@ -112,6 +112,6 @@ if __name__ == "__main__":
                 f"Humidity: {data['humidity']:.1f} %, "
                 f"Pressure: {data['pressure']:.1f} hPa, "
                 f"Gas: {data['gas']} ohms, "
-                f"IAQ: {data['iaq']:.1f} %",
+                f"IAQ: {data['iaq']:.1f}",
                 flush=True)
         time.sleep(1)
