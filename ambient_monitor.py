@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 
 class AmbientMonitor:
-    GAS_BASELINE_OHMS = 72000
+    GAS_BASELINE_OHMS = 130000
     HUMIDITY_BASELINE = 40.0 # 40% humidity is considered optimal
     HUMIDITY_WEIGHT = 0.25 # humidity contributes 25% to the IAQ score
 
